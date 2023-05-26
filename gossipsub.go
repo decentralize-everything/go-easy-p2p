@@ -95,7 +95,7 @@ type GossipSub struct {
 }
 
 func newGossipSub(host *Host, logger *zap.Logger) *GossipSub {
-	ps, err := pubsub.NewGossipSub(host.ctx, host.h)
+	ps, err := pubsub.NewGossipSub(host.ctx, host.impl)
 	if err != nil {
 		panic(err)
 	}
@@ -150,15 +150,15 @@ func (gs *GossipSub) discoverPeers(rendezvous string) {
 			}
 
 			for peer := range peers {
-				if peer.ID == gs.host.h.ID() {
+				if peer.ID == gs.host.impl.ID() {
 					continue
 				}
 
-				if gs.host.h.Network().Connectedness(peer.ID) == network.Connected {
+				if gs.host.impl.Network().Connectedness(peer.ID) == network.Connected {
 					continue
 				}
 
-				if err := gs.host.h.Connect(gs.host.ctx, peer); err != nil {
+				if err := gs.host.impl.Connect(gs.host.ctx, peer); err != nil {
 					gs.logger.Info("failed to connect to peer", zap.String("peer", peer.ID.Pretty()), zap.Error(err))
 				} else {
 					gs.logger.Info("connected to peer", zap.String("peer", peer.ID.Pretty()))

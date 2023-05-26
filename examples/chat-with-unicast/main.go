@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	ep2p "github.com/decentralize-everything/go-easy-p2p"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	maddr "github.com/multiformats/go-multiaddr"
 	"go.uber.org/zap"
@@ -34,47 +34,54 @@ func (al *addrList) Set(value string) error {
 
 var (
 	bootstrapPeers addrList
-	topicName      = "test-topic"
 )
 
 func main() {
-	flag.Var(&bootstrapPeers, "peers", "bootstrap peer list")
+	flag.Var(&bootstrapPeers, "boots", "bootstrap peer list")
+	target := flag.String("dst", "", "target peer to send")
 	flag.Parse()
 
 	logger, _ := zap.NewDevelopment()
 	defer logger.Sync()
 
-	// host := ep2p.NewClient(bootstrapPeers, logger)
 	var host *ep2p.Host
-	if len(bootstrapPeers) > 0 {
+	// if *target != "" {
+	if len(bootstrapPeers) != 0 {
 		host = ep2p.NewClient(bootstrapPeers, logger)
 	} else {
 		host = ep2p.NewServer(bootstrapPeers, logger)
 	}
-	logger.Info("host created", zap.Strings("desc", host.Desc()))
+	// host := ep2p.NewServer(bootstrapPeers, logger)
 
-	gs := host.NewGossipSub()
-	topic, err := gs.Join(
-		topicName,
-		ep2p.WithCallback(func(m *pubsub.Message) error {
-			from := peer.ID(m.Message.From).String()
-			receivedFrom := m.ReceivedFrom.String()
-			logger.Info(
-				"new message received",
-				zap.String("origin", from[len(from)-6:]),
-				zap.String("sender", receivedFrom[len(receivedFrom)-6:]),
-				zap.String("topic", *m.Message.Topic),
-				zap.String("data", string(m.Message.Data)),
-			)
-			// return errors.New("error for test")
-			return nil
-		}),
-		ep2p.FilterSelf(host.ID()),
-	)
+	logger.Info("host created", zap.Strings("desc", host.Desc()))
+	if len(bootstrapPeers) == 0 {
+		logger.Info("run as bootstrap node")
+		select {}
+	}
+
+	if *target == "" {
+		host.SetDefaultRecvHandler(func(s network.Stream) {
+			buf := bufio.NewReader(s)
+			for {
+				str, err := buf.ReadString('\n')
+				if err != nil {
+					panic(err)
+				}
+
+				logger.Info("message received", zap.String("message", string(str)))
+			}
+		})
+		logger.Info("run as receiver node")
+		select {}
+	}
+
+	logger.Info("run as sender node")
+	receiver, err := peer.Decode(*target)
 	if err != nil {
 		panic(err)
 	}
 
+	logger.Info("peers connected before send", zap.Any("peers", host.Peers()))
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		s, err := reader.ReadString('\n')
@@ -83,11 +90,10 @@ func main() {
 		}
 
 		if s == "quit\n" {
-			gs.Leave(topicName)
 			return
 		}
 
-		if err := topic.Publish([]byte(s)); err != nil {
+		if err := host.Send([]byte(s), receiver); err != nil {
 			panic(err)
 		}
 

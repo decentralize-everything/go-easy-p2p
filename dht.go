@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	// dual "github.com/libp2p/go-libp2p-kad-dht/dual"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	"github.com/libp2p/go-libp2p/p2p/discovery/util"
@@ -11,6 +12,7 @@ import (
 )
 
 type DHT struct {
+	// kademliaDHT      *dual.DHT
 	kademliaDHT      *dht.IpfsDHT
 	routingDiscovery *routing.RoutingDiscovery
 
@@ -18,9 +20,24 @@ type DHT struct {
 	logger *zap.Logger
 }
 
-func newDHT(host *Host, logger *zap.Logger) *DHT {
+func newDHT(host *Host, logger *zap.Logger, serverMode bool) *DHT {
 	logger = logger.Named("DHT")
-	kademliaDHT, err := dht.New(host.ctx, host.h, dht.Mode(dht.ModeAutoServer))
+	// For test.
+	// var kademliaDHT *dual.DHT
+	// var err error
+	// if !serverMode {
+	// 	kademliaDHT, err = dual.New(host.ctx, host.h, dual.DHTOption(dht.Mode(dht.ModeClient)))
+	// } else {
+	// 	kademliaDHT, err = dual.New(host.ctx, host.h, dual.DHTOption(dht.Mode(dht.ModeServer)))
+	// }
+	var kademliaDHT *dht.IpfsDHT
+	var err error
+	if !serverMode {
+		kademliaDHT, err = dht.New(host.ctx, host.impl, dht.Mode(dht.ModeClient), dht.ProtocolPrefix("/ep2p/dht/1.0"))
+	} else {
+		kademliaDHT, err = dht.New(host.ctx, host.impl, dht.Mode(dht.ModeServer), dht.ProtocolPrefix("/ep2p/dht/1.0"))
+	}
+	// kademliaDHT, err := dht.New(host.ctx, host.h, dht.Mode(dht.ModeAutoServer))
 	if err != nil {
 		panic(err)
 	}
@@ -35,7 +52,7 @@ func newDHT(host *Host, logger *zap.Logger) *DHT {
 		peerInfo, _ := peer.AddrInfoFromP2pAddr(peerAddr)
 		go func() {
 			defer wg.Done()
-			if err := host.h.Connect(host.ctx, *peerInfo); err != nil {
+			if err := host.impl.Connect(host.ctx, *peerInfo); err != nil {
 				logger.Info("failed to connect to bootstrap peer", zap.Error(err))
 			} else {
 				logger.Info("connected to bootstrap peer", zap.String("peer", peerInfo.String()))
